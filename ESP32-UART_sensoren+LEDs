@@ -1,0 +1,158 @@
+# CODE ESP32 OP ARDUINO IDE
+
+#define BLYNK_TEMPLATE_ID "TMPL5ldWpWfAs"
+#define BLYNK_TEMPLATE_NAME "eindproject Quinten Noah"
+#define BLYNK_AUTH_TOKEN "Md7ewloWuZ2A8QDdQOccjqdjBo1Apw_w"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <Wire.h>
+#include <Adafruit_BMP280.h>
+
+// WIFI
+char ssid[] = "gigacube-707B";
+char pass[] = "5JLTRAH7F9H8R5HE";
+
+// STATUS LEDS (temperatuur)
+#define LED_R_STATUS 4
+#define LED_G_STATUS 5
+#define LED_B_STATUS 6
+
+// RGB KAMERLAMP (wit licht aan/uit)
+#define RGB_R 8
+#define RGB_G 9
+#define RGB_B 10
+
+// KNOP
+#define BUTTON 7
+
+// BMP280
+#define SDA_PIN 2
+#define SCL_PIN 3
+Adafruit_BMP280 bmp;
+
+// LOGICA
+unsigned long pressStart = 0;
+bool lampState = false;
+
+// â­ FIX 1 â€” wanneer ESP32 connecteert, sync V0
+BLYNK_CONNECTED() {
+  Serial.println("BLYNK CONNECTED");
+  Blynk.syncVirtual(V0);
+}
+
+// LAMP FUNCTIES
+void lampOn() {
+  digitalWrite(RGB_R, HIGH);
+  digitalWrite(RGB_G, HIGH);
+  digitalWrite(RGB_B, HIGH);
+  Serial.println("RGB:ON");
+}
+
+void lampOff() {
+  digitalWrite(RGB_R, LOW);
+  digitalWrite(RGB_G, LOW);
+  digitalWrite(RGB_B, LOW);
+  Serial.println("RGB:OFF");
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(LED_R_STATUS, OUTPUT);
+  pinMode(LED_G_STATUS, OUTPUT);
+  pinMode(LED_B_STATUS, OUTPUT);
+
+  pinMode(BUTTON, INPUT_PULLUP);
+
+  pinMode(RGB_R, OUTPUT);
+  pinMode(RGB_G, OUTPUT);
+  pinMode(RGB_B, OUTPUT);
+
+  Wire.begin(SDA_PIN, SCL_PIN);
+  bmp.begin(0x76);
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  lampOn();
+  delay(500);
+  lampOff();
+}
+
+void loop() {
+
+  // â­ FIX 2 â€” reconnect als cloud wegvalt
+  if (!Blynk.connected()) {
+    Blynk.connect();
+  }
+
+  Blynk.run();
+
+  float temp = bmp.readTemperature();
+
+  if (temp < 19) {
+    digitalWrite(LED_R_STATUS, HIGH);
+    digitalWrite(LED_G_STATUS, LOW);
+    digitalWrite(LED_B_STATUS, LOW);
+  } 
+  else if (temp > 24) {
+    digitalWrite(LED_R_STATUS, LOW);
+    digitalWrite(LED_G_STATUS, LOW);
+    digitalWrite(LED_B_STATUS, HIGH);
+  } 
+  else {
+    digitalWrite(LED_R_STATUS, LOW);
+    digitalWrite(LED_G_STATUS, HIGH);
+    digitalWrite(LED_B_STATUS, LOW);
+  }
+
+  Serial.printf("TEMP:%.2f\n", temp);
+
+  // KNOP LOGICA
+  if (digitalRead(BUTTON) == LOW) {
+    if (pressStart == 0) pressStart = millis();
+
+    if (millis() - pressStart > 3000) {
+      lampState = false;
+      lampOff();
+      Serial.println("BTN:LONG");
+      Blynk.virtualWrite(V0, 0);
+    }
+  } 
+  else {
+    if (pressStart != 0 && millis() - pressStart < 3000) {
+      lampState = !lampState;
+
+      if (lampState) lampOn();
+      else lampOff();
+
+      Serial.println("BTN:SHORT");
+      Blynk.virtualWrite(V0, lampState ? 1 : 0);
+    }
+    pressStart = 0;
+  }
+
+  // UART
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+
+    if (cmd == "RGB:ON")  { lampState = true;  lampOn();  Blynk.virtualWrite(V0, 1); }
+    if (cmd == "RGB:OFF") { lampState = false; lampOff(); Blynk.virtualWrite(V0, 0); }
+  }
+}
+
+// BLYNK SWITCH (V0)
+BLYNK_WRITE(V0) {
+  int v = param.asInt();
+  Serial.print("BLYNK V0 = ");
+  Serial.println(v);
+
+  if (v == 1) {
+    lampState = true;
+    lampOn();
+  } else {
+    lampState = false;
+    lampOff();
+  }
+}
