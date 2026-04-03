@@ -1,0 +1,47 @@
+# RASPBERRYPI CODE
+import serial
+import time
+from RPLCD.i2c import CharLCD
+
+# LCD 
+lcd = CharLCD('PCF8574', 0x27)
+
+# UART
+ser = serial.Serial('/dev/serial0', 115200, timeout=1)
+
+temp_value = "--"
+status_text = "----"
+
+def update_lcd():
+    lcd.clear()
+    lcd.write_string(f"Temp: {temp_value}C")
+    lcd.cursor_pos = (1, 0)
+    lcd.write_string(f"Status: {status_text}")
+
+update_lcd()
+
+while True:
+    line = ser.readline().decode().strip()
+    print("RX:", line)
+
+    if line.startswith("TEMP:"):
+        # temperatuur uitlezen
+        temp_value = line.split(":")[1]
+
+        try:
+            t = float(temp_value)
+
+            # status bepalen
+            if t < 19:
+                status_text = "Verwarmen"
+            elif t > 24:
+                status_text = "Koelen"
+            else:
+                status_text = "Comfort"
+
+        except:
+            status_text = "----"
+
+        update_lcd()
+
+    time.sleep(0.1)
